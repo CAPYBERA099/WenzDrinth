@@ -189,7 +189,8 @@ pub async fn login_begin(
 ) -> crate::Result<MinecraftLoginFlow> {
     let redirect_encoded = percent_encode(ELY_REDIRECT_URI);
     let auth_url = format!(
-        "{ELY_AUTH_URL}/{ELY_CLIENT_ID}?\
+        "{ELY_AUTH_URL}?\
+         client_id={ELY_CLIENT_ID}&\
          redirect_uri={redirect_encoded}&\
          response_type=code&\
          scope=account_info+minecraft_server_session&\
