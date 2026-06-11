@@ -47,10 +47,14 @@ pub struct DeviceToken {
     pub display_claims: HashMap<String, serde_json::Value>,
 }
 
+fn default_signing_key() -> SigningKey {
+    SigningKey::random(&mut rand::rngs::OsRng)
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DeviceTokenKey {
     pub id: Uuid,
-    #[serde(skip)]
+    #[serde(skip, default = "default_signing_key")]
     pub key: SigningKey,
     pub x: String,
     pub y: String,
