@@ -574,6 +574,26 @@ pub async fn launch_minecraft(
 
     download_log_config(&state, &version_info, None, false).await?;
 
+    // Download authlib-injector for ely.by authentication
+    {
+        let authlib_path = state.directories.libraries_dir().join("authlib-injector.jar");
+        if !authlib_path.exists() {
+            tracing::info!("Downloading authlib-injector for ely.by...");
+            let resp = crate::util::fetch::INSECURE_REQWEST_CLIENT
+                .get(crate::state::AUTHLIB_INJECTOR_URL)
+                .send()
+                .await;
+            if let Ok(resp) = resp {
+                if resp.status().is_success() {
+                    if let Ok(bytes) = resp.bytes().await {
+                        let _ = tokio::fs::write(&authlib_path, &bytes).await;
+                        tracing::info!("authlib-injector downloaded successfully");
+                    }
+                }
+            }
+        }
+    }
+
     let java_version = get_java_version_from_profile(profile, &version_info)
         .await?
         .ok_or_else(|| {

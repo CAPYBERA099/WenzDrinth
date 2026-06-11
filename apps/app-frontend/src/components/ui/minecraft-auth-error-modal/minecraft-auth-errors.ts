@@ -10,7 +10,7 @@ export const minecraftAuthErrors: MinecraftAuthError[] = [
 	{
 		errorMatchers: ['Failed to deserialize response to JSON during step RefreshOAuthToken:'],
 		whatHappened:
-			'Your saved Microsoft sign-in token has expired or was revoked, so Modrinth App cannot refresh your Minecraft session.',
+			'Your saved ely.by sign-in token has expired or was revoked, so Modrinth App cannot refresh your Minecraft session.',
 		stepsToFix: [
 			'Sign out of the affected Minecraft account in Modrinth App',
 			'Sign in to the account again',
@@ -34,7 +34,7 @@ export const minecraftAuthErrors: MinecraftAuthError[] = [
 			message.includes('Failed to deserialize response to JSON during step MinecraftToken:') &&
 			message.includes('429 Too Many Requests'),
 		whatHappened:
-			'Microsoft or Minecraft temporarily blocked the sign-in request because there were too many recent attempts.',
+			'ely.by or Minecraft temporarily blocked the sign-in request because there were too many recent attempts.',
 		stepsToFix: [
 			'Wait about an hour before trying again',
 			'Restart Modrinth App after waiting',
@@ -58,12 +58,12 @@ export const minecraftAuthErrors: MinecraftAuthError[] = [
 	{
 		errorMatchers: ['Failed to fetch player profile'],
 		whatHappened:
-			'Minecraft services could not return a Java Edition profile for this account. This most often happens when the game was purchased recently, the Java profile has not finished being created, or the wrong Microsoft account is being used.',
+			'Minecraft services could not return a Java Edition profile for this account. This most often happens when the game was purchased recently, the Java profile has not finished being created, or the wrong ely.by account is being used.',
 		stepsToFix: [
 			'Sign in with the <a href="https://www.minecraft.net/en-us/download">official Minecraft Launcher</a>',
 			'Launch Minecraft: Java Edition once from the official launcher',
 			'Wait up to an hour if the purchase or profile setup was recent',
-			'Make sure you are using the Microsoft account that owns Minecraft. See <a href="https://support.modrinth.com/en/articles/9409136-finding-the-right-xbox-account">Finding the right Xbox account</a> for help',
+			'Make sure you are using the ely.by account that owns Minecraft. See <a href="https://support.modrinth.com/en/articles/9409136-finding-the-right-xbox-account">Finding the right Xbox account</a> for help',
 			'Try signing in to Modrinth App again',
 		],
 	},
@@ -79,7 +79,7 @@ export const minecraftAuthErrors: MinecraftAuthError[] = [
 				'live.com',
 			].some((domain) => message.includes(domain)),
 		whatHappened:
-			'Modrinth App could not connect to a Microsoft, Xbox, or Minecraft service needed for sign-in. This is usually caused by a local network, DNS, proxy, firewall, hosts file, VPN, or antivirus issue.',
+			'Modrinth App could not connect to a ely.by, Xbox, or Minecraft service needed for sign-in. This is usually caused by a local network, DNS, proxy, firewall, hosts file, VPN, or antivirus issue.',
 		stepsToFix: [
 			'Restart Modrinth App and try signing in again',
 			'Check that your internet connection is working',
@@ -137,7 +137,7 @@ export const minecraftAuthErrors: MinecraftAuthError[] = [
 	},
 	{
 		errorCode: '2148916238',
-		whatHappened: 'This account is underage and not linked to a Microsoft family group.',
+		whatHappened: 'This account is underage and not linked to a ely.by family group.',
 		stepsToFix: [
 			'Review the <a href="https://help.minecraft.net/hc/en-us/articles/4408968616077">Family Setup Guide</a>',
 			'Join or create a family group as instructed',
@@ -156,7 +156,7 @@ export const minecraftAuthErrors: MinecraftAuthError[] = [
 		errorCode: '2148916229',
 		whatHappened: "This account is restricted and doesn't have permission to play online.",
 		stepsToFix: [
-			'Have a guardian sign in to <a href="https://account.microsoft.com/family/">Microsoft Family</a>',
+			'Have a guardian sign in to <a href="https://account.microsoft.com/family/">ely.by Family</a>',
 			'Update online play permissions',
 			'Once finished, try signing in again',
 		],
@@ -176,7 +176,7 @@ export const minecraftAuthErrors: MinecraftAuthError[] = [
 			'Xbox services rejected the request to authorize this account for Minecraft services, but did not return a specific account restriction that Modrinth App recognizes.',
 		stepsToFix: [
 			'Sign in with the <a href="https://www.minecraft.net/en-us/download">official Minecraft Launcher</a>',
-			'Complete any prompts shown by Microsoft, Xbox, or Minecraft',
+			'Complete any prompts shown by ely.by, Xbox, or Minecraft',
 			'Try signing in to Modrinth App again',
 			'If the official launcher also fails, follow the error shown there or contact Xbox Support',
 		],

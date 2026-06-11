@@ -1,4 +1,4 @@
-//! Authentication flow interface
+//! Authentication flow interface (ely.by)
 
 use reqwest::StatusCode;
 
@@ -6,16 +6,20 @@ use crate::State;
 use crate::state::{Credentials, MinecraftLoginFlow};
 use crate::util::fetch::INSECURE_REQWEST_CLIENT;
 
+/// Check if ely.by auth servers are reachable
 #[tracing::instrument]
 pub async fn check_reachable() -> crate::Result<()> {
     let resp = INSECURE_REQWEST_CLIENT
-        .get("https://sessionserver.mojang.com/session/minecraft/hasJoined")
+        .get("https://authserver.ely.by")
         .send()
         .await?;
-    if resp.status() == StatusCode::NO_CONTENT {
-        return Ok(());
+    // Any response means the server is reachable
+    if resp.status().is_server_error() {
+        return Err(crate::ErrorKind::OtherError(
+            "ely.by auth server returned an error".to_string(),
+        )
+        .as_error());
     }
-    resp.error_for_status()?;
     Ok(())
 }
 

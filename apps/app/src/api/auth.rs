@@ -17,15 +17,15 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
         .build()
 }
 
-/// Checks if the authentication servers are reachable.
+/// Checks if the ely.by authentication servers are reachable.
 #[tauri::command]
 pub async fn check_reachable() -> Result<()> {
     minecraft_auth::check_reachable().await?;
     Ok(())
 }
 
-/// Authenticate a user with Hydra - part 1
-/// This begins the authentication flow quasi-synchronously, returning a URL to visit (that the user will sign in at)
+/// Authenticate a user with ely.by OAuth2.
+/// Opens a WebView window for the user to sign in.
 #[tauri::command]
 pub async fn login<R: Runtime>(
     app: tauri::AppHandle<R>,
@@ -50,7 +50,7 @@ pub async fn login<R: Runtime>(
             },
         )?),
     )
-    .title("Sign into Modrinth")
+    .title("Sign into WenzDrinth — ely.by")
     .always_on_top(true)
     .center()
     .build()?;
@@ -63,16 +63,16 @@ pub async fn login<R: Runtime>(
             return Ok(None);
         }
 
-        if window
-            .url()?
-            .as_str()
-            .starts_with("https://login.live.com/oauth20_desktop.srf")
+        // ely.by redirects to our localhost callback with ?code=...
+        let current_url = window.url()?;
+        let url_str = current_url.as_str();
+
+        if url_str.starts_with("http://localhost:25575/callback")
             && let Some((_, code)) =
-                window.url()?.query_pairs().find(|x| x.0 == "code")
+                current_url.query_pairs().find(|x| x.0 == "code")
         {
             window.close()?;
             let val = minecraft_auth::finish_login(&code.clone(), flow).await?;
-
             return Ok(Some(val));
         }
 

@@ -906,16 +906,16 @@ const updatePopupMessages = defineMessages({
 	},
 	meteredBody: {
 		id: 'app.update-popup.body.metered',
-		defaultMessage: `Modrinth App v{version} is available now! Since you're on a metered network, we didn't automatically download it.`,
+		defaultMessage: `WenzDrinth v{version} is available now! Since you're on a metered network, we didn't automatically download it.`,
 	},
 	downloadedBody: {
 		id: 'app.update-popup.body.download-complete',
-		defaultMessage: `Modrinth App v{version} has finished downloading. Reload to update now, or automatically when you close Modrinth App.`,
+		defaultMessage: `WenzDrinth v{version} has finished downloading. Reload to update now, or automatically when you close WenzDrinth.`,
 	},
 	linuxBody: {
 		id: 'app.update-popup.body.linux',
 		defaultMessage:
-			'Modrinth App v{version} is available. Use your package manager to update for the latest features and fixes!',
+			'WenzDrinth v{version} is available. Use your package manager to update for the latest features and fixes!',
 	},
 	reload: {
 		id: 'app.update-popup.reload',
@@ -1550,7 +1550,7 @@ provideAppUpdateDownloadProgress(appUpdateDownload)
 				>
 					<h2 class="text-lg font-extrabold mt-0 mb-2">Hey there Modrinth user!</h2>
 					<p class="m-0 leading-tight">
-						Would you mind answering a few questions about your experience with Modrinth App?
+						Would you mind answering a few questions about your experience with WenzDrinth?
 					</p>
 					<p class="mt-3 mb-4 leading-tight">
 						This feedback will go directly to the Modrinth team and help guide future updates!

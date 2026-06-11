@@ -871,7 +871,7 @@ async fn run_credentials(
             let server_id = uuid::Uuid::new_v4().to_string();
 
             let join_result = fetch::INSECURE_REQWEST_CLIENT
-                .post("https://sessionserver.mojang.com/session/minecraft/join")
+                .post("https://authserver.ely.by/session/session/minecraft/join")
                 .json(&json!({
                     "accessToken": &credentials.access_token,
                     "selectedProfile": credentials.offline_profile.id.simple().to_string(),
