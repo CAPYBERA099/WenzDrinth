@@ -2,9 +2,14 @@ use crate::ErrorKind;
 use crate::util::fetch::INSECURE_REQWEST_CLIENT;
 use chrono::{DateTime, Duration, TimeZone, Utc};
 use dashmap::DashMap;
-use reqwest::{Response, StatusCode};
+use heck::ToTitleCase;
+use p256::ecdsa::SigningKey;
+use p256::pkcs8::{DecodePrivateKey, EncodePrivateKey, LineEnding};
+use reqwest::{Response, StatusCode, Url};
+use serde::de::DeserializeOwned;
 use serde::ser::SerializeStruct;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::future::Future;
 use std::hash::{BuildHasherDefault, DefaultHasher};
@@ -18,19 +23,53 @@ use uuid::Uuid;
 /// ely.by OAuth2 client ID.
 /// Register your own at https://account.ely.by/dev/applications
 /// Redirect URI must be set to ELY_REDIRECT_URI below.
-const ELY_CLIENT_ID: &str = "wenzdrinth";
+const ELY_CLIENT_ID: &str = "wenzrinth";
 const ELY_CLIENT_SECRET: &str = "";  // Fill in if your app is confidential
 const ELY_AUTH_URL: &str = "https://account.ely.by/oauth2/v1";
 const ELY_TOKEN_URL: &str = "https://account.ely.by/api/oauth2/v1/token";
 const ELY_PROFILE_URL: &str = "https://account.ely.by/api/account/v1/info";
 const ELY_REDIRECT_URI: &str = "http://localhost:25575/callback";
-const ELY_AUTHSERVER_URL: &str = "https://authserver.ely.by";
-const ELY_SESSION_URL: &str = "https://authserver.ely.by/session";
+const ELY_SESSION_URL: &str = "https://authserver.ely.by";
 
 pub const AUTHLIB_INJECTOR_URL: &str =
     "https://authlib-injector.yushi.moe/artifact/latest/authlib-injector.jar";
 
 pub const ELY_AUTHLIB_SERVER: &str = "https://authserver.ely.by";
+
+/// User-Agent used for Minecraft services API requests (skins, capes).
+pub const MINECRAFT_SERVICES_USER_AGENT: &str =
+    "WenzDrinth (https://github.com/CAPYBERA099/WenzDrinth)";
+
+// ── Legacy types (kept for legacy_converter compatibility) ──────────────
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DeviceToken {
+    pub issue_instant: DateTime<Utc>,
+    pub not_after: DateTime<Utc>,
+    pub token: String,
+    pub display_claims: HashMap<String, serde_json::Value>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DeviceTokenKey {
+    pub id: Uuid,
+    #[serde(skip)]
+    pub key: Option<SigningKey>,
+    pub x: String,
+    pub y: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DeviceTokenPair {
+    pub token: DeviceToken,
+    pub key: DeviceTokenKey,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RequestWithDate<T> {
+    pub date: DateTime<Utc>,
+    pub value: T,
+}
 
 // ── Auth steps (simplified for ely.by) ──────────────────────────────────
 #[derive(Debug, Clone, Copy)]
@@ -70,6 +109,7 @@ pub enum MinecraftAuthenticationError {
 
 // ── Login flow ──────────────────────────────────────────────────────────
 
+#[derive(Debug)]
 pub struct MinecraftLoginFlow {
     /// The URL the user must visit to authenticate
     pub auth_request_uri: String,
@@ -81,18 +121,36 @@ pub struct MinecraftLoginFlow {
 pub async fn login_begin(
     _exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite> + Copy,
 ) -> crate::Result<MinecraftLoginFlow> {
+    let redirect_encoded = percent_encode(ELY_REDIRECT_URI);
     let auth_url = format!(
         "{ELY_AUTH_URL}/{ELY_CLIENT_ID}?\
-         redirect_uri={}&\
+         redirect_uri={redirect_encoded}&\
          response_type=code&\
          scope=account_info+minecraft_server_session&\
          prompt=select_account",
-        urlencoding::encode(ELY_REDIRECT_URI),
     );
 
     Ok(MinecraftLoginFlow {
         auth_request_uri: auth_url,
     })
+}
+
+/// Simple percent-encoding for URL parameters.
+fn percent_encode(s: &str) -> String {
+    let mut result = String::with_capacity(s.len() * 3);
+    for byte in s.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9'
+            | b'-' | b'_' | b'.' | b'~' => {
+                result.push(byte as char);
+            }
+            _ => {
+                result.push('%');
+                result.push_str(&format!("{:02X}", byte));
+            }
+        }
+    }
+    result
 }
 
 /// Finish the ely.by OAuth2 login flow by exchanging the code for tokens.
@@ -711,44 +769,60 @@ pub enum MinecraftCharacterExpressionState {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct MinecraftSkin {
-    pub id: String,
+    pub id: Uuid,
     pub state: MinecraftCharacterExpressionState,
-    pub url: String,
-    #[serde(default)]
-    pub texture_key: Option<String>,
+    pub url: Arc<Url>,
+    #[serde(
+        default,
+        rename = "textureKey"
+    )]
+    pub texture_key: Option<Arc<str>>,
     pub variant: MinecraftSkinVariant,
+    #[serde(
+        default,
+        rename = "alias",
+        deserialize_with = "normalize_skin_alias_case"
+    )]
+    pub name: Option<String>,
+}
+
+fn normalize_skin_alias_case<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    Ok(<Option<Cow<'_, str>>>::deserialize(deserializer)?
+        .map(|alias| alias.to_title_case()))
 }
 
 impl MinecraftSkin {
     pub fn texture_key(&self) -> Arc<str> {
-        if let Some(key) = &self.texture_key {
-            return Arc::from(key.as_str());
-        }
-        if let Some(key) = self.url.rsplit('/').next() {
-            return Arc::from(key);
-        }
-        Arc::from(self.id.as_str())
+        self.texture_key.as_ref().cloned().unwrap_or_else(|| {
+            self.url
+                .path_segments()
+                .and_then(|mut path_segments| {
+                    path_segments.next_back().map(String::from)
+                })
+                .unwrap_or_else(|| self.id.as_simple().to_string())
+                .into()
+        })
     }
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct MinecraftCape {
-    pub id: String,
+    pub id: Uuid,
     pub state: MinecraftCharacterExpressionState,
-    pub url: String,
-    #[serde(default)]
-    pub alias: Option<String>,
+    pub url: Arc<Url>,
+    #[serde(rename = "alias")]
+    pub name: Arc<str>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct MinecraftProfile {
+    #[serde(default)]
     pub id: Uuid,
     pub name: String,
-    #[serde(default)]
     pub skins: Vec<MinecraftSkin>,
-    #[serde(default)]
     pub capes: Vec<MinecraftCape>,
     #[serde(skip)]
     pub fetch_time: Option<Instant>,
@@ -756,40 +830,28 @@ pub struct MinecraftProfile {
 
 impl MinecraftProfile {
     fn is_fresh(&self, max_age: std::time::Duration) -> bool {
-        self.fetch_time
-            .map_or(false, |t| t.elapsed() < max_age)
+        self.fetch_time.is_some_and(|last_profile_fetch_time| {
+            Instant::now().saturating_duration_since(last_profile_fetch_time)
+                < max_age
+        })
     }
 
     pub fn current_skin(&self) -> crate::Result<&MinecraftSkin> {
-        self.skins
+        Ok(self
+            .skins
             .iter()
-            .find(|s| s.state == MinecraftCharacterExpressionState::Classic)
-            .or_else(|| self.skins.first())
-            .ok_or_else(|| {
-                crate::ErrorKind::OtherError(
-                    "No skin found in profile".to_string(),
-                )
-                .as_error()
+            .find(|skin| {
+                skin.state == MinecraftCharacterExpressionState::Active
             })
+            .ok_or_else(|| {
+                ErrorKind::OtherError("No active skin found".into())
+            })?)
     }
 
     pub fn current_cape(&self) -> Option<&MinecraftCape> {
-        self.capes
-            .iter()
-            .find(|c| c.state == MinecraftCharacterExpressionState::Classic)
-            .or_else(|| self.capes.first())
-    }
-}
-
-impl Default for MinecraftProfile {
-    fn default() -> Self {
-        Self {
-            id: Uuid::nil(),
-            name: String::new(),
-            skins: Vec::new(),
-            capes: Vec::new(),
-            fetch_time: None,
-        }
+        self.capes.iter().find(|cape| {
+            cape.state == MinecraftCharacterExpressionState::Active
+        })
     }
 }
 
