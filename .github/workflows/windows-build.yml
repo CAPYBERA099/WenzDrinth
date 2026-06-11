@@ -39,6 +39,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build app
+        env:
+          ELY_CLIENT_SECRET: ${{ secrets.ELY_CLIENT_SECRET }}
         run: pnpm --filter @modrinth/app exec tauri build --bundles nsis
 
       - name: Upload installer

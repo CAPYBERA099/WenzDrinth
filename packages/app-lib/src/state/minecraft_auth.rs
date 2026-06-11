@@ -20,8 +20,11 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 // ── ely.by configuration ────────────────────────────────────────────────
-const ELY_CLIENT_ID: &str = "wenzrinth";
-const ELY_CLIENT_SECRET: &str = "";
+const ELY_CLIENT_ID: &str = "wenzrinth1";
+const ELY_CLIENT_SECRET: &str = match option_env!("ELY_CLIENT_SECRET") {
+    Some(secret) => secret,
+    None => "",
+};
 const ELY_AUTH_URL: &str = "https://account.ely.by/oauth2/v1";
 const ELY_TOKEN_URL: &str = "https://account.ely.by/api/oauth2/v1/token";
 const ELY_PROFILE_URL: &str = "https://account.ely.by/api/account/v1/info";
