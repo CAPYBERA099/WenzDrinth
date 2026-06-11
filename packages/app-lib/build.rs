@@ -5,6 +5,7 @@ use std::{env, fs};
 
 fn main() {
     println!("cargo::rerun-if-changed=.env");
+    println!("cargo::rerun-if-changed=.env.prod");
     println!("cargo::rerun-if-changed=java/gradle");
     println!("cargo::rerun-if-changed=java/src");
     println!("cargo::rerun-if-changed=java/build.gradle.kts");
@@ -16,8 +17,11 @@ fn main() {
 }
 
 fn set_env() {
-    for (var_name, var_value) in
-        dotenvy::dotenv_iter().into_iter().flatten().flatten()
+    // Try .env first, fall back to .env.prod for fresh clones
+    let env_iter = dotenvy::dotenv_iter()
+        .or_else(|_| dotenvy::from_filename_iter(".env.prod"));
+
+    for (var_name, var_value) in env_iter.into_iter().flatten().flatten()
     {
         if var_name == "DATABASE_URL" {
             // The sqlx database URL is a build-time detail that should not be exposed to the crate

@@ -20,11 +20,8 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 // ── ely.by configuration ────────────────────────────────────────────────
-/// ely.by OAuth2 client ID.
-/// Register your own at https://account.ely.by/dev/applications
-/// Redirect URI must be set to ELY_REDIRECT_URI below.
 const ELY_CLIENT_ID: &str = "wenzrinth";
-const ELY_CLIENT_SECRET: &str = "";  // Fill in if your app is confidential
+const ELY_CLIENT_SECRET: &str = "";
 const ELY_AUTH_URL: &str = "https://account.ely.by/oauth2/v1";
 const ELY_TOKEN_URL: &str = "https://account.ely.by/api/oauth2/v1/token";
 const ELY_PROFILE_URL: &str = "https://account.ely.by/api/account/v1/info";
@@ -36,7 +33,7 @@ pub const AUTHLIB_INJECTOR_URL: &str =
 
 pub const ELY_AUTHLIB_SERVER: &str = "https://authserver.ely.by";
 
-/// User-Agent used for Minecraft services API requests (skins, capes).
+/// User-Agent used for Minecraft services API requests.
 pub const MINECRAFT_SERVICES_USER_AGENT: &str =
     "WenzDrinth (https://github.com/CAPYBERA099/WenzDrinth)";
 
@@ -71,7 +68,8 @@ pub struct RequestWithDate<T> {
     pub value: T,
 }
 
-// ── Auth steps (simplified for ely.by) ──────────────────────────────────
+// ── Auth steps ──────────────────────────────────────────────────────────
+
 #[derive(Debug, Clone, Copy)]
 pub enum MinecraftAuthStep {
     ElyOAuthToken,
@@ -111,28 +109,7 @@ pub enum MinecraftAuthenticationError {
 
 #[derive(Debug)]
 pub struct MinecraftLoginFlow {
-    /// The URL the user must visit to authenticate
     pub auth_request_uri: String,
-}
-
-/// Begin the ely.by OAuth2 login flow.
-/// Returns a URL for the user to visit in a WebView.
-#[tracing::instrument]
-pub async fn login_begin(
-    _exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite> + Copy,
-) -> crate::Result<MinecraftLoginFlow> {
-    let redirect_encoded = percent_encode(ELY_REDIRECT_URI);
-    let auth_url = format!(
-        "{ELY_AUTH_URL}/{ELY_CLIENT_ID}?\
-         redirect_uri={redirect_encoded}&\
-         response_type=code&\
-         scope=account_info+minecraft_server_session&\
-         prompt=select_account",
-    );
-
-    Ok(MinecraftLoginFlow {
-        auth_request_uri: auth_url,
-    })
 }
 
 /// Simple percent-encoding for URL parameters.
@@ -153,17 +130,33 @@ fn percent_encode(s: &str) -> String {
     result
 }
 
-/// Finish the ely.by OAuth2 login flow by exchanging the code for tokens.
+/// Begin the ely.by OAuth2 login flow.
+#[tracing::instrument]
+pub async fn login_begin(
+    _exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite> + Copy,
+) -> crate::Result<MinecraftLoginFlow> {
+    let redirect_encoded = percent_encode(ELY_REDIRECT_URI);
+    let auth_url = format!(
+        "{ELY_AUTH_URL}/{ELY_CLIENT_ID}?\
+         redirect_uri={redirect_encoded}&\
+         response_type=code&\
+         scope=account_info+minecraft_server_session&\
+         prompt=select_account",
+    );
+
+    Ok(MinecraftLoginFlow {
+        auth_request_uri: auth_url,
+    })
+}
+
+/// Finish the ely.by OAuth2 login flow.
 #[tracing::instrument]
 pub async fn login_finish(
     code: &str,
     _flow: MinecraftLoginFlow,
     exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite> + Copy,
 ) -> crate::Result<Credentials> {
-    // Exchange authorization code for access token
     let oauth_token = ely_token_exchange(code).await?;
-
-    // Fetch ely.by user profile
     let ely_profile = ely_fetch_profile(&oauth_token.access_token).await?;
 
     let mut credentials = Credentials {
@@ -182,7 +175,6 @@ pub async fn login_finish(
     };
 
     credentials.upsert(exec).await?;
-
     Ok(credentials)
 }
 
@@ -322,14 +314,11 @@ async fn ely_fetch_profile(
 }
 
 /// Fetch minecraft-compatible profile from ely.by session server.
-/// Used for skins/capes display.
 async fn minecraft_profile(
     access_token: &str,
 ) -> Result<MinecraftProfile, MinecraftAuthenticationError> {
-    // First get the user's UUID from the ely.by profile endpoint
     let ely_profile = ely_fetch_profile(access_token).await?;
 
-    // Then fetch skin/cape data from ely.by session server
     let url = format!(
         "{ELY_SESSION_URL}/session/minecraft/profile/{}",
         ely_profile.uuid.simple()
@@ -366,7 +355,6 @@ async fn minecraft_profile(
             }
         })?;
     profile.fetch_time = Some(Instant::now());
-
     Ok(profile)
 }
 
@@ -382,7 +370,6 @@ pub struct Credentials {
     pub active: bool,
 }
 
-/// An entry in the player profile cache, keyed by player UUID.
 pub(super) enum ProfileCacheEntry {
     Hit(Arc<MinecraftProfile>),
     AuthErrorBackoff {
@@ -424,7 +411,6 @@ impl OnlineProfileCacheIntent {
 }
 
 impl Credentials {
-    /// Refresh ely.by tokens if expired.
     async fn refresh(
         &mut self,
         exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite> + Copy,
@@ -441,7 +427,6 @@ impl Credentials {
             Utc::now() + Duration::seconds(oauth_token.expires_in as i64);
 
         self.upsert(exec).await?;
-
         Ok(())
     }
 
@@ -588,7 +573,6 @@ impl Credentials {
             match creds.refresh(exec).await {
                 Ok(()) => Ok(Some(creds)),
                 Err(err) => {
-                    // On network errors, fall back to cached credentials
                     tracing::warn!(
                         "Could not refresh credentials, using cached: {err}",
                     );
@@ -600,22 +584,23 @@ impl Credentials {
         }
     }
 
+    // NOTE: SQL strings must match .sqlx/ cached queries EXACTLY (whitespace matters!)
     #[tracing::instrument]
     pub async fn get_active(
         exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite> + Copy,
     ) -> crate::Result<Option<Credentials>> {
-        let result = sqlx::query!(
-            r#"
-            SELECT uuid, active, username, access_token, refresh_token, expires
+        let res = sqlx::query!(
+            "
+            SELECT
+                uuid, active, username, access_token, refresh_token, expires
             FROM minecraft_users
             WHERE active = TRUE
-            LIMIT 1
-            "#,
+            "
         )
         .fetch_optional(exec)
         .await?;
 
-        Ok(result.map(|row| Credentials {
+        Ok(res.map(|row| Credentials {
             offline_profile: MinecraftProfile {
                 id: Uuid::parse_str(&row.uuid).unwrap_or_default(),
                 name: row.username,
@@ -636,17 +621,18 @@ impl Credentials {
     pub async fn get_all(
         exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite> + Copy,
     ) -> crate::Result<DashMap<Uuid, Credentials>> {
-        let results = sqlx::query!(
-            r#"
-            SELECT uuid, active, username, access_token, refresh_token, expires
+        let res = sqlx::query!(
+            "
+            SELECT
+                uuid, active, username, access_token, refresh_token, expires
             FROM minecraft_users
-            "#,
+            "
         )
         .fetch_all(exec)
         .await?;
 
         let map = DashMap::new();
-        for row in results {
+        for row in res {
             let uuid = Uuid::parse_str(&row.uuid).unwrap_or_default();
             map.insert(uuid, Credentials {
                 offline_profile: MinecraftProfile {
@@ -673,17 +659,19 @@ impl Credentials {
         &self,
         exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite> + Copy,
     ) -> crate::Result<()> {
-        // Deactivate all if this one is active
         if self.active {
             sqlx::query!(
-                "UPDATE minecraft_users SET active = FALSE WHERE active = TRUE",
+                "
+                UPDATE minecraft_users
+                SET active = FALSE
+                ",
             )
             .execute(exec)
             .await?;
         }
 
         sqlx::query!(
-            r#"
+            "
             INSERT INTO minecraft_users (uuid, active, username, access_token, refresh_token, expires)
             VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (uuid) DO UPDATE SET
@@ -692,8 +680,8 @@ impl Credentials {
                 access_token = $4,
                 refresh_token = $5,
                 expires = $6
-            "#,
-            self.offline_profile.id.to_string(),
+            ",
+            self.offline_profile.id,
             self.active,
             self.offline_profile.name,
             self.access_token,
@@ -712,13 +700,14 @@ impl Credentials {
         exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite> + Copy,
     ) -> crate::Result<()> {
         sqlx::query!(
-            "DELETE FROM minecraft_users WHERE uuid = $1",
-            uuid.to_string(),
+            "
+            DELETE FROM minecraft_users WHERE uuid = $1
+            ",
+            uuid,
         )
         .execute(exec)
         .await?;
 
-        // Clear from profile cache
         let mut profile_cache = PROFILE_CACHE.lock().await;
         profile_cache.remove(&uuid);
 
@@ -769,15 +758,21 @@ pub enum MinecraftCharacterExpressionState {
 #[derive(Deserialize, Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct MinecraftSkin {
+    /// The UUID of this skin object.
     pub id: Uuid,
+    /// The selection state of the skin.
     pub state: MinecraftCharacterExpressionState,
+    /// The URL to the skin texture.
     pub url: Arc<Url>,
+    /// A hash of the skin texture.
     #[serde(
         default,
         rename = "textureKey"
     )]
     pub texture_key: Option<Arc<str>>,
+    /// The player model variant this skin is for.
     pub variant: MinecraftSkinVariant,
+    /// User-friendly name for the skin.
     #[serde(
         default,
         rename = "alias",
@@ -794,6 +789,7 @@ fn normalize_skin_alias_case<'de, D: Deserializer<'de>>(
 }
 
 impl MinecraftSkin {
+    /// Robustly computes the texture key for this skin.
     pub fn texture_key(&self) -> Arc<str> {
         self.texture_key.as_ref().cloned().unwrap_or_else(|| {
             self.url
@@ -808,21 +804,28 @@ impl MinecraftSkin {
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct MinecraftCape {
+    /// The UUID of the cape.
     pub id: Uuid,
+    /// The selection state of the cape.
     pub state: MinecraftCharacterExpressionState,
+    /// The URL to the cape texture.
     pub url: Arc<Url>,
+    /// The user-friendly name for the cape.
     #[serde(rename = "alias")]
     pub name: Arc<str>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 pub struct MinecraftProfile {
+    /// The UUID of the player.
     #[serde(default)]
     pub id: Uuid,
+    /// The username of the player.
     pub name: String,
+    /// The skins the player is known to have.
     pub skins: Vec<MinecraftSkin>,
+    /// The capes the player is known to have.
     pub capes: Vec<MinecraftCape>,
     #[serde(skip)]
     pub fetch_time: Option<Instant>,
@@ -836,6 +839,7 @@ impl MinecraftProfile {
         })
     }
 
+    /// Returns the currently selected skin for this profile.
     pub fn current_skin(&self) -> crate::Result<&MinecraftSkin> {
         Ok(self
             .skins
@@ -848,6 +852,7 @@ impl MinecraftProfile {
             })?)
     }
 
+    /// Returns the currently selected cape for this profile.
     pub fn current_cape(&self) -> Option<&MinecraftCape> {
         self.capes.iter().find(|cape| {
             cape.state == MinecraftCharacterExpressionState::Active
