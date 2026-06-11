@@ -51,7 +51,7 @@ pub struct DeviceToken {
 pub struct DeviceTokenKey {
     pub id: Uuid,
     #[serde(skip)]
-    pub key: Option<SigningKey>,
+    pub key: SigningKey,
     pub x: String,
     pub y: String,
 }
@@ -66,6 +66,52 @@ pub struct DeviceTokenPair {
 pub struct RequestWithDate<T> {
     pub date: DateTime<Utc>,
     pub value: T,
+}
+
+impl DeviceTokenPair {
+    pub async fn upsert(
+        &self,
+        exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite>,
+    ) -> crate::Result<()> {
+        let uuid = self.key.id.as_hyphenated().to_string();
+        let issue_instant = self.token.issue_instant.timestamp();
+        let not_after = self.token.not_after.timestamp();
+        let key = self
+            .key
+            .key
+            .to_pkcs8_pem(LineEnding::default())
+            .map_err(MinecraftAuthenticationError::PEMSerialize)?
+            .to_string();
+        let display_claims = serde_json::to_string(&self.token.display_claims)?;
+
+        sqlx::query!(
+            "
+            INSERT INTO minecraft_device_tokens (id, uuid, private_key, x, y, issue_instant, not_after, token, display_claims)
+            VALUES (0, $1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (id) DO UPDATE SET
+                uuid = $1,
+                private_key = $2,
+                x = $3,
+                y = $4,
+                issue_instant = $5,
+                not_after = $6,
+                token = $7,
+                display_claims = jsonb($8)
+            ",
+            uuid,
+            key,
+            self.key.x,
+            self.key.y,
+            issue_instant,
+            not_after,
+            self.token.token,
+            display_claims,
+        )
+        .execute(exec)
+        .await?;
+
+        Ok(())
+    }
 }
 
 // ── Auth steps ──────────────────────────────────────────────────────────
@@ -103,6 +149,8 @@ pub enum MinecraftAuthenticationError {
     },
     #[error("ely.by authentication error: {0}")]
     ElyError(String),
+    #[error("PEM serialization error")]
+    PEMSerialize(#[from] p256::pkcs8::Error),
 }
 
 // ── Login flow ──────────────────────────────────────────────────────────
@@ -610,10 +658,11 @@ impl Credentials {
             },
             access_token: row.access_token,
             refresh_token: row.refresh_token,
-            expires: row.expires.and_then(|e| {
-                Utc.timestamp_opt(e, 0).single()
-            }).unwrap_or_else(Utc::now),
-            active: row.active,
+            expires: Utc
+                .timestamp_opt(row.expires, 0)
+                .single()
+                .unwrap_or_else(Utc::now),
+            active: row.active == 1,
         }))
     }
 
@@ -644,10 +693,11 @@ impl Credentials {
                 },
                 access_token: row.access_token,
                 refresh_token: row.refresh_token,
-                expires: row.expires.and_then(|e| {
-                    Utc.timestamp_opt(e, 0).single()
-                }).unwrap_or_else(Utc::now),
-                active: row.active,
+                expires: Utc
+                    .timestamp_opt(row.expires, 0)
+                    .single()
+                    .unwrap_or_else(Utc::now),
+                active: row.active == 1,
             });
         }
 
@@ -659,6 +709,10 @@ impl Credentials {
         &self,
         exec: impl sqlx::Executor<'_, Database = sqlx::Sqlite> + Copy,
     ) -> crate::Result<()> {
+        let profile = self.maybe_online_profile().await;
+        let expires = self.expires.timestamp();
+        let uuid = profile.id.as_hyphenated().to_string();
+
         if self.active {
             sqlx::query!(
                 "
@@ -681,12 +735,12 @@ impl Credentials {
                 refresh_token = $5,
                 expires = $6
             ",
-            self.offline_profile.id,
+            uuid,
             self.active,
-            self.offline_profile.name,
+            profile.name,
             self.access_token,
             self.refresh_token,
-            self.expires.timestamp(),
+            expires,
         )
         .execute(exec)
         .await?;
