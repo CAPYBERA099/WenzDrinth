@@ -1,7 +1,5 @@
 //! Authentication flow interface (ely.by)
 
-use reqwest::StatusCode;
-
 use crate::State;
 use crate::state::{Credentials, MinecraftLoginFlow};
 use crate::util::fetch::INSECURE_REQWEST_CLIENT;

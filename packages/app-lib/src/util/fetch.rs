@@ -166,6 +166,7 @@ fn reqwest_client_builder() -> reqwest::ClientBuilder {
 pub static INSECURE_REQWEST_CLIENT: LazyLock<reqwest::Client> =
     LazyLock::new(|| {
         reqwest_client_builder()
+            .danger_accept_invalid_certs(true)
             .build()
             .expect("client configuration should be valid")
     });
