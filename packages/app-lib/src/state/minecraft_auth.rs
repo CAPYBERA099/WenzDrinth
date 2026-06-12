@@ -4,9 +4,8 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use dashmap::DashMap;
 use heck::ToTitleCase;
 use p256::ecdsa::SigningKey;
-use p256::pkcs8::{DecodePrivateKey, EncodePrivateKey, LineEnding};
+use p256::pkcs8::{EncodePrivateKey, LineEnding};
 use reqwest::{Response, StatusCode, Url};
-use serde::de::DeserializeOwned;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
@@ -20,7 +19,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 // ── ely.by configuration ────────────────────────────────────────────────
-const ELY_CLIENT_ID: &str = "wenzrinth";
+const ELY_CLIENT_ID: &str = "wenzdrinth";
 const ELY_CLIENT_SECRET: &str = "";
 const ELY_AUTH_URL: &str = "https://account.ely.by/oauth2/v1";
 const ELY_TOKEN_URL: &str = "https://account.ely.by/api/oauth2/v1/token";
@@ -50,10 +49,14 @@ pub struct DeviceToken {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DeviceTokenKey {
     pub id: Uuid,
-    #[serde(skip)]
+    #[serde(skip, default = "dummy_signing_key")]
     pub key: SigningKey,
     pub x: String,
     pub y: String,
+}
+
+fn dummy_signing_key() -> SigningKey {
+    SigningKey::from_bytes(&[1u8; 32].into()).expect("valid dummy key")
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -185,7 +188,8 @@ pub async fn login_begin(
 ) -> crate::Result<MinecraftLoginFlow> {
     let redirect_encoded = percent_encode(ELY_REDIRECT_URI);
     let auth_url = format!(
-        "{ELY_AUTH_URL}/{ELY_CLIENT_ID}?\
+        "{ELY_AUTH_URL}?\
+         client_id={ELY_CLIENT_ID}&\
          redirect_uri={redirect_encoded}&\
          response_type=code&\
          scope=account_info+minecraft_server_session&\
@@ -207,7 +211,7 @@ pub async fn login_finish(
     let oauth_token = ely_token_exchange(code).await?;
     let ely_profile = ely_fetch_profile(&oauth_token.access_token).await?;
 
-    let mut credentials = Credentials {
+    let credentials = Credentials {
         offline_profile: MinecraftProfile {
             id: ely_profile.uuid,
             name: ely_profile.username.clone(),
@@ -241,7 +245,9 @@ async fn ely_token_exchange(
 ) -> Result<ElyOAuthToken, MinecraftAuthenticationError> {
     let mut params = HashMap::new();
     params.insert("client_id", ELY_CLIENT_ID);
-    params.insert("client_secret", ELY_CLIENT_SECRET);
+    if !ELY_CLIENT_SECRET.is_empty() {
+        params.insert("client_secret", ELY_CLIENT_SECRET);
+    }
     params.insert("redirect_uri", ELY_REDIRECT_URI);
     params.insert("grant_type", "authorization_code");
     params.insert("code", code);
@@ -283,7 +289,9 @@ async fn ely_token_refresh(
 ) -> Result<ElyOAuthToken, MinecraftAuthenticationError> {
     let mut params = HashMap::new();
     params.insert("client_id", ELY_CLIENT_ID);
-    params.insert("client_secret", ELY_CLIENT_SECRET);
+    if !ELY_CLIENT_SECRET.is_empty() {
+        params.insert("client_secret", ELY_CLIENT_SECRET);
+    }
     params.insert("grant_type", "refresh_token");
     params.insert("refresh_token", refresh_token);
 
