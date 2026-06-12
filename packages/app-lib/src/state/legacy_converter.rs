@@ -149,7 +149,7 @@ where
                     },
                     key: DeviceTokenKey {
                         id: uuid,
-                        key: private_key,
+                        key: Some(private_key),
                         x: device_token.x,
                         y: device_token.y,
                     },
