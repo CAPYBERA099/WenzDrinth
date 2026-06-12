@@ -4,9 +4,8 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use dashmap::DashMap;
 use heck::ToTitleCase;
 use p256::ecdsa::SigningKey;
-use p256::pkcs8::{DecodePrivateKey, EncodePrivateKey, LineEnding};
+use p256::pkcs8::{EncodePrivateKey, LineEnding};
 use reqwest::{Response, StatusCode, Url};
-use serde::de::DeserializeOwned;
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
@@ -50,8 +49,8 @@ pub struct DeviceToken {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DeviceTokenKey {
     pub id: Uuid,
-    #[serde(skip)]
-    pub key: SigningKey,
+    #[serde(skip, default)]
+    pub key: Option<SigningKey>,
     pub x: String,
     pub y: String,
 }
@@ -79,6 +78,8 @@ impl DeviceTokenPair {
         let key = self
             .key
             .key
+            .as_ref()
+            .expect("DeviceTokenPair.key must be set when upserting")
             .to_pkcs8_pem(LineEnding::default())
             .map_err(MinecraftAuthenticationError::PEMSerialize)?
             .to_string();
@@ -207,7 +208,7 @@ pub async fn login_finish(
     let oauth_token = ely_token_exchange(code).await?;
     let ely_profile = ely_fetch_profile(&oauth_token.access_token).await?;
 
-    let mut credentials = Credentials {
+    let credentials = Credentials {
         offline_profile: MinecraftProfile {
             id: ely_profile.uuid,
             name: ely_profile.username.clone(),
